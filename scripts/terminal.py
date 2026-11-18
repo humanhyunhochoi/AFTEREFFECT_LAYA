@@ -14,6 +14,7 @@ import uuid
 # Keep an installed skill tree unchanged when launched directly as a script.
 sys.dont_write_bytecode = True
 import ae_basic as core
+import graphics
 from cli_output import configure_stdout
 from ae_phrases import strip_app_prefix
 
@@ -65,6 +66,9 @@ def parse_request(request):
         return {"kind": "help", "actions": []}
     if s in {"현재 상태 보여줘", "현재 상태 확인해줘", "컴포지션 정보 보여줘"}:
         return {"kind": "inspect", "actions": []}
+    graphic = graphics.parse(s, COLOR_NAMES, COLORS)
+    if graphic is not None:
+        return graphic
     # The whole command must match; negations, questions and quoted instructions
     # are never converted into executable operations by a substring search.
     m = re.fullmatch(r"(?:컴포지션|컴프|comp|composition)\s*(?:(?P<w>\d{2,5})(?:\s*[x×*]\s*|\s+)(?P<h>\d{2,5})|(?P<packed>\d{8}))(?:\s+(?P<fps>\d+(?:\.\d+)?)fps)?(?:\s+(?P<seconds>\d+(?:\.\d+)?)초)?(?:\s+(?:만들어줘|생성해줘|create))?", s, re.IGNORECASE)
@@ -119,6 +123,8 @@ def resolve_actions(parsed, snapshot):
             if len(selected)!=1:
                 raise ValueError("Select exactly one intended layer first")
             action["layer"]=selected[0]["id"]
+        if action.get("layers")=="$selected_many":
+            action["layers"]=[row["id"] for row in selected]
     return core.validate_plan({"actions":actions},snapshot)
 
 
@@ -209,10 +215,12 @@ def main(argv=None):
     try:
         parsed=parse_request("명령어" if a.list else " ".join(a.request))
         if parsed["kind"]=="help":
-            value={"status":"commands","examples":EXAMPLES,"defaults":{"fps":30,"duration_seconds":10},"note":"Background color is a composition setting, not an opaque render background"}
+            value={"status":"commands","examples":EXAMPLES+graphics.EXAMPLES,"defaults":{"fps":30,"duration_seconds":10},"graphics_help":"docs/graphics.md","note":"Background color is a composition setting, not an opaque render background"}
         elif a.dry_run:
             # Validate all explicit numbers before even a read-only app query.
-            fake={"session":"preview","signature":"preview","project_items":0,"active_comp":{"id":1,"width":1920,"height":1080,"duration":10800},"layers":[{"id":1,"selected":True,"three_d":False}]}
+            fake={"session":"preview","signature":"preview","project_items":0,"active_comp":{"id":1,"width":1920,"height":1080,"duration":10800},"layers":[{"id":i,"index":i,"selected":True,"three_d":False} for i in range(1,3)]}
+            if parsed.get("actions") and parsed["actions"][0].get("op") != "stagger_layers":
+                fake["layers"] = fake["layers"][:1]
             if parsed["kind"]=="mutate":
                 try: resolve_actions(parsed,fake)
                 except ValueError as exc:

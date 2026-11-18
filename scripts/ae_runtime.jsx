@@ -51,7 +51,10 @@
             if(c.numLayers>200) throw Error("Inspect supports up to 200 layers; select a smaller working composition");
             s.active_comp={id:c.id,name:c.name,width:c.width,height:c.height,fps:c.frameRate,duration:c.duration,time:c.time,background_color:c.bgColor};
             for(var i=1;i<=c.numLayers;i++) {
-                var l=c.layer(i), row={id:l.id,index:i,name:l.name,three_d:!!l.threeDLayer,locked:l.locked,selected:l.selected,enabled:l.enabled,parent_id:l.parent?l.parent.id:null,animated:[],expressions:[],values:{},key_counts:{}};
+                var l=c.layer(i), row={id:l.id,index:i,name:l.name,three_d:!!l.threeDLayer,locked:l.locked,selected:l.selected,enabled:l.enabled,parent_id:l.parent?l.parent.id:null,in_point:l.inPoint,out_point:l.outPoint,layer_type:"av",animated:[],expressions:[],values:{},key_counts:{}};
+                if(l instanceof CameraLayer)row.layer_type="camera";
+                else if(l instanceof LightLayer)row.layer_type="light";
+                try {row.separated_position=!!l.property("ADBE Transform Group").property("ADBE Position").dimensionsSeparated;} catch(noPosition) {}
                 for(var name in matches) if(matches.hasOwnProperty(name)) {
                     try {var p=prop(l,name);row.values[name]=visibleValue(p.value,l);row.key_counts[name]=p.numKeys;if(p.numKeys)row.animated.push(name);if(p.expressionEnabled)row.expressions.push(name);} catch(ignore) {}
                 }
@@ -80,8 +83,10 @@
         else if(typeof v!=="number") throw Error("Expected scalar transform");
         if(p.expressionEnabled) throw Error("Existing expression will not be replaced");
     }
+    /*__AE_GRAPHICS_RUNTIME__*/
     function execute(a) {
         var c,l,p,k,name,changed={},r={op:a.op};
+        if(isGraphic(a.op))return executeGraphic(a);
         if(a.op==="create_comp") {
             c=app.project.items.addComp(a.name,a.width,a.height,1,a.duration,a.fps);
             c.openInViewer();
@@ -146,7 +151,7 @@
         }
         report.status="ok";report.snapshot=snapshot();
     } catch(error) {
-        report.status=report.may_have_changes?"partial":"failed";report.error=String(error);report.failed_action_index=report.actions.length;
+        report.status=report.may_have_changes?"partial":"failed";report.error=String(error);report.error_line=error.line;report.failed_action_index=report.actions.length;
     } finally {
         if(undo)app.endUndoGroup();
     }

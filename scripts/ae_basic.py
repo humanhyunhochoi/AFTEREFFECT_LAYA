@@ -9,6 +9,7 @@ import re
 import sys
 import uuid
 from cli_output import configure_stdout
+import graphics
 
 VERSION = "ae-basic.v1"
 ROOT = Path(__file__).resolve().parent
@@ -24,6 +25,7 @@ CATALOG = {
     "set_transform": "comp,layer; values object: position,anchor_point,scale,rotation,opacity.",
     "set_keyframes": "comp,layer,property,keys=[{time,value}]; optional interpolation linear|hold.",
 }
+CATALOG.update(graphics.CATALOG)
 
 
 def read_json(path):
@@ -84,6 +86,7 @@ def validate_plan(raw, snapshot):
     active = snapshot.get("active_comp")
     native_layers = {row["id"]: dict(row) for row in snapshot["layers"]}
     validated = []
+    layer_counts = {active["id"]: len(native_layers)} if active else {}
 
     def comp_info(target):
         if isinstance(target, str) and target.startswith("@"):
@@ -122,7 +125,14 @@ def validate_plan(raw, snapshot):
             raise ValueError("Unknown action; use prepare-inspect for inspection")
         action = dict(original)
         op = action["op"]
-        if op == "create_comp":
+        if op in graphics.CATALOG:
+            target = action["comp"]
+            action = graphics.validate(action, comp_info(target), layer_info, layer_counts.get(target, 0))
+            layer_counts[target] = layer_counts.get(target, 0) + action["added_layers"]
+            if op == "stagger_layers":
+                for target_id in action["layers"]:
+                    native_layers[target_id]["animated"] = sorted(set(native_layers[target_id].get("animated", [])) | {"position", "opacity"})
+        elif op == "create_comp":
             exact(action, {"op", "name", "width", "height", "fps", "duration"}, {"ref"})
             text(action["name"], "name")
             for dimension in ("width", "height"):
@@ -216,6 +226,9 @@ def validate_plan(raw, snapshot):
                 if action.get("interpolation", "linear") not in ("linear", "hold"):
                     raise ValueError("Only linear or hold interpolation is supported")
                 layer["animated"] = sorted(set(layer.get("animated", [])) | {prop})
+        if op in {"add_null", "add_text", "add_solid"}:
+            target = action["comp"]
+            layer_counts[target] = layer_counts.get(target, 0) + 1
         validated.append(action)
     return validated
 
@@ -229,6 +242,9 @@ def emit(job, destination):
     if source.count("/*__AE_BASIC_JOB__*/") != 1:
         raise ValueError("Runtime template is invalid")
     source = source.replace("/*__AE_BASIC_JOB__*/", payload)
+    if source.count("/*__AE_GRAPHICS_RUNTIME__*/") != 1:
+        raise ValueError("Graphics runtime template is invalid")
+    source = source.replace("/*__AE_GRAPHICS_RUNTIME__*/", (ROOT/"graphics_runtime.jsx").read_text(encoding="utf-8"))
     destination.mkdir(parents=True)
     (destination/"job.json").write_text(json.dumps(job, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     (destination/"run.jsx").write_text(source, encoding="utf-8")
@@ -246,7 +262,10 @@ def summarize(raw):
     rows = selected if selected else layers[:6]
     compact_actions = []
     for action in raw.get("actions", []):
-        row = {k: v for k, v in action.items() if k not in {"keys", "text"}}
+        row = {k: v for k, v in action.items() if k not in {"keys", "text", "items", "trails", "stagger"}}
+        for field in ("items", "trails", "stagger"):
+            if field in action:
+                row[field+"_verified"] = len(action[field])
         if "keys" in action:
             keys = action["keys"]
             row.update(key_count=len(keys), first_key=keys[0] if keys else None, last_key=keys[-1] if keys else None)
@@ -287,7 +306,12 @@ def verify_receipt(raw, job):
         if actual.get("op") != op:
             raise ValueError("Native operation order differs from the plan")
         wanted = {}
-        if op == "create_comp":
+        if op in graphics.CATALOG:
+            resolved = dict(expected)
+            if isinstance(resolved.get("layer"), str):
+                resolved["layer"] = refs.get(resolved["layer"][1:])
+            graphics.verify(resolved, actual, equal_value)
+        elif op == "create_comp":
             wanted = {k: expected[k] for k in ("name", "width", "height", "fps", "duration")}
             created_id = actual.get("comp_id")
         elif op == "add_solid":
@@ -304,7 +328,10 @@ def verify_receipt(raw, job):
                         wanted[k] = expected[k]
             created_id = actual.get("layer_id")
         elif op in {"set_comp", "set_layer"}:
-            wanted = expected["changes"]
+            wanted = dict(expected["changes"])
+            if op == "set_comp":
+                # AE stores composition background channels at 8-bit precision.
+                wanted["background_color"] = [round(x*255)/255 for x in wanted["background_color"]]
         elif op == "set_transform":
             wanted = {"values": expected["values"]}
         else:

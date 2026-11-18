@@ -5,6 +5,7 @@ import unicodedata
 APP_PREFIX = re.compile(r"^(?:애프터\s*이펙트|애프터\s*이펙츠|after[\s-]+effects|에펙|애펙)\s*", re.IGNORECASE)
 LAUNCH_ONLY = re.compile(r"(?:켜줘|열어줘|실행해줘|열기|실행|켜|열어|open|launch|꺼줘|종료해줘|닫아줘|종료|quit|close)", re.IGNORECASE)
 KOREAN_SCOPES = ("컴포지션", "컴프", "배경", "텍스트", "널", "3D 널", "솔리드", "선택 레이어", "현재 상태", "레이어", "키프레임")
+KOREAN_SCOPES += ("방사형", "흔들리는 격자", "물결 격자", "윤곽선", "등고선", "도형 흩뿌리기", "흩뿌리기", "입자 구름", "잔상", "순차 등장", "지름", "초록색 원", "빨간색 원", "파란색 원")
 
 
 def strip_app_prefix(text):

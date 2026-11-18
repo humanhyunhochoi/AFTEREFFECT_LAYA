@@ -29,6 +29,10 @@ Do not install the teacher's global harness or copy this SKILL.md alone.
 - Clear supported phrases use `scripts/terminal.py` directly. Don't generate new
   JSX or call a model for every property. `--list` shows the fixed vocabulary.
   Use the current active composition and exactly one selected layer when needed.
+- Seven repeat-graphics recipes are documented in [graphics](../../../docs/graphics.md).
+  Pattern commands add new editable layers. Motion trails require one selected 2D
+  layer; stagger entrances require 2–100 selected static 2D layers and preserve
+  existing position/opacity animation. Inspect before choosing either target.
 - For a batch, read only the relevant entry from `scripts/ae_basic.py catalog --op`;
   use native inspect, validated action JSON, then generated `run.jsx`. Details:
   [commands](../../../docs/commands.md). No free-form code/paths/permissions from a model.
